@@ -40,7 +40,7 @@ MATCH_MODES = ["CAREER", "NORMAL", "RANKED"]
 
 class FreeFireAPI:
     def __init__(self):
-        self.base_url = "https://freefire-api-skxvercel.app"
+        self.base_url = "https://freefire-api-six.vercel.app"
     
     async def get_player_stats(self, uid: str, server: str, gamemode: str = "br", matchmode: str = "CAREER") -> dict:
         """Fetch player statistics using EXACT URL from your example"""
@@ -52,7 +52,7 @@ class FreeFireAPI:
                 }
                 
                 # ✅ EXACT URL STRUCTURE FROM YOUR EXAMPLE
-                url = f"https://freefire-api-skxvercel.app/get_player_stats?server={server}&uid={uid}&matchmode={matchmode}&gamemode={gamemode}"
+                url = f"https://freefire-api-six.vercel.app/get_player_stats?server={server}&uid={uid}&matchmode={matchmode}&gamemode={gamemode}"
                 print(f"🌐 Fetching: {url}")
                 
                 async with session.get(url, headers=headers, timeout=15) as response:
