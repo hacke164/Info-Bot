@@ -6,6 +6,7 @@ import os
 from flask import Flask
 import threading
 import datetime
+from typing import Literal
 
 # Flask app for uptime monitoring
 app = Flask(__name__)
@@ -22,10 +23,6 @@ def health_check():
         "timestamp": datetime.datetime.utcnow().isoformat()
     }
 
-@app.route('/ping')
-def ping():
-    return "pong"
-
 def run_flask():
     app.run(host='0.0.0.0', port=8080, debug=False, use_reloader=False)
 
@@ -34,22 +31,19 @@ intents = discord.Intents.default()
 bot = discord.Client(intents=intents)
 tree = app_commands.CommandTree(bot)
 
-# Free Fire Regions
-REGIONS = ["IND", "BD", "PK", "BR", "NA", "EU", "ME", "TR", "ID", "SG", "MY", "TH", "VN", "PH"]
+# Free Fire Servers (lowercase as shown in example)
+SERVERS = ["ind", "bd", "pk", "br", "na", "eu", "me", "tr", "id", "sg", "my", "th", "vn", "ph"]
 
-# Rank mapping based on rank number
-RANK_NAMES = {
-    220: "Heroic", 219: "Grandmaster", 218: "Master", 
-    217: "Diamond", 216: "Platinum", 215: "Gold",
-    214: "Silver", 213: "Bronze"
-}
+# Game Modes and Match Modes (exact from example)
+GAME_MODES = ["br", "cs"]
+MATCH_MODES = ["CAREER", "NORMAL", "RANKED"]
 
 class FreeFireAPI:
     def __init__(self):
-        self.base_url = "https://free-ff-api-src-5plp.onrender.com/api/v1"
+        self.base_url = "https://freefire-api-skxvercel.app"
     
-    async def get_player_stats(self, uid: str, region: str) -> dict:
-        """Fetch player statistics from Free Fire API"""
+    async def get_player_stats(self, uid: str, server: str, gamemode: str = "br", matchmode: str = "CAREER") -> dict:
+        """Fetch player statistics using EXACT URL from your example"""
         try:
             async with aiohttp.ClientSession() as session:
                 headers = {
@@ -57,15 +51,15 @@ class FreeFireAPI:
                     'Accept': 'application/json'
                 }
                 
-                # Exact endpoint you provided
-                url = f"https://free-ff-api-src-5plp.onrender.com/api/v1/account?region={region}&uid={uid}"
+                # ✅ EXACT URL STRUCTURE FROM YOUR EXAMPLE
+                url = f"https://freefire-api-skxvercel.app/get_player_stats?server={server}&uid={uid}&matchmode={matchmode}&gamemode={gamemode}"
                 print(f"🌐 Fetching: {url}")
                 
-                async with session.get(url, headers=headers, timeout=10) as response:
+                async with session.get(url, headers=headers, timeout=15) as response:
                     if response.status == 200:
                         data = await response.json()
                         print(f"✅ API Response received")
-                        return self.parse_player_data(data, uid, region)
+                        return self.parse_player_data(data, uid, server, gamemode, matchmode)
                     else:
                         return {"error": f"API returned status {response.status}"}
                         
@@ -76,37 +70,53 @@ class FreeFireAPI:
         except Exception as e:
             return {"error": f"Unexpected error: {str(e)}"}
     
-    def parse_player_data(self, data: dict, uid: str, region: str) -> dict:
-        """Parse the actual API response structure"""
+    def parse_player_data(self, data: dict, uid: str, server: str, gamemode: str, matchmode: str) -> dict:
+        """Parse API response into structured data"""
         try:
-            # Check if we have basicInfo (main data container)
-            if 'basicInfo' not in data:
-                return {"error": "No player data found in response"}
+            # Check if data is valid
+            if not data or isinstance(data, dict) and data.get('status') == 'error':
+                return {"error": "No player data found or invalid UID"}
             
-            basic_info = data['basicInfo']
-            clan_info = data.get('clanBasicInfo', {})
-            social_info = data.get('socialInfo', {})
+            # The API might return data directly or nested
+            player_data = data.get('data', data)  # Try 'data' key first, else use root
             
-            # Extract player information from the actual API structure
+            # Extract basic info
+            basic_info = player_data.get('basicInfo', {})
+            clan_info = player_data.get('clanBasicInfo', {})
+            stats = player_data.get('stats', {})
+            
             result = {
                 "uid": uid,
-                "region": region,
+                "server": server.upper(),
+                "gamemode": gamemode.upper(),
+                "matchmode": matchmode,
                 "name": basic_info.get('nickname', 'Unknown'),
                 "level": basic_info.get('level', 0),
                 "exp": basic_info.get('exp', 0),
-                "rank_number": basic_info.get('rank', 0),
-                "rank_name": RANK_NAMES.get(basic_info.get('rank', 0), "Unranked"),
                 "rank_points": basic_info.get('rankingPoints', 0),
-                "max_rank": RANK_NAMES.get(basic_info.get('maxRank', 0), "Unknown"),
                 "clan_name": clan_info.get('clanName', 'No Clan'),
                 "clan_level": clan_info.get('clanLevel', 0),
-                "clan_members": f"{clan_info.get('memberNum', 0)}/{clan_info.get('capacity', 0)}",
                 "likes": basic_info.get('liked', 0),
-                "badges": basic_info.get('badgeCnt', 0),
-                "last_login": basic_info.get('lastLoginAt', 'Unknown'),
-                "status": social_info.get('signature', 'No status'),
-                "season_id": basic_info.get('seasonId', 0)
+                
+                # Game stats
+                "matches_played": stats.get('matchesPlayed', 0),
+                "kills": stats.get('kills', 0),
+                "headshots": stats.get('headshots', 0),
+                "damage": stats.get('damage', 0),
+                "wins": stats.get('wins', 0),
+                "top_3": stats.get('top3', 0),
+                "top_6": stats.get('top6', 0),
+                "survival_time": stats.get('survivalTime', 0),
             }
+            
+            # Calculate ratios
+            if result['matches_played'] > 0:
+                result['win_rate'] = round((result['wins'] / result['matches_played']) * 100, 2)
+                deaths = result['matches_played'] - result['wins']
+                result['kd_ratio'] = round(result['kills'] / max(deaths, 1), 2)
+            else:
+                result['win_rate'] = 0
+                result['kd_ratio'] = 0
             
             return result
             
@@ -116,27 +126,32 @@ class FreeFireAPI:
 # Initialize API
 ff_api = FreeFireAPI()
 
-# SINGLE COMMAND - UID Lookup
-@tree.command(name="uid", description="Get Free Fire player statistics by UID")
-@app_commands.describe(uid="Player UID", region="Server region (IND, BD, PK, etc.)")
-async def uid_lookup(interaction: discord.Interaction, uid: str, region: str = "IND"):
-    """Get Free Fire player statistics using UID and Region"""
+# SLASH COMMANDS
+
+@tree.command(name="stats", description="Get Free Fire player statistics")
+@app_commands.describe(
+    uid="Player UID",
+    server="Server region (ind, bd, pk, etc.)",
+    gamemode="Game mode (br, cs)",
+    matchmode="Match mode"
+)
+async def player_stats(
+    interaction: discord.Interaction, 
+    uid: str,
+    server: str = "ind",
+    gamemode: Literal["br", "cs"] = "br",
+    matchmode: Literal["CAREER", "NORMAL", "RANKED"] = "CAREER"
+):
+    """Get Free Fire player stats using the exact API from your example"""
     await interaction.response.defer()
-    
-    # Validate region
-    region_upper = region.upper()
-    if region_upper not in REGIONS:
-        valid_regions = ", ".join(REGIONS)
-        await interaction.followup.send(f"❌ Invalid region! Valid: {valid_regions}")
-        return
     
     # Validate UID
     if not uid.isdigit() or len(uid) < 6:
         await interaction.followup.send("❌ Invalid UID! Must be numeric and at least 6 digits.")
         return
     
-    # Fetch player data
-    player_data = await ff_api.get_player_stats(uid, region_upper)
+    # Fetch player data using EXACT URL format from your example
+    player_data = await ff_api.get_player_stats(uid, server, gamemode, matchmode)
     
     if "error" in player_data:
         embed = discord.Embed(
@@ -145,99 +160,85 @@ async def uid_lookup(interaction: discord.Interaction, uid: str, region: str = "
             color=discord.Color.red()
         )
         embed.add_field(
-            name="💡 Check", 
-            value="• UID is correct\n• Region is correct\n• Player might be private",
+            name="💡 Try This Example",
+            value="`/stats uid:11959685790 server:ind matchmode:RANKED gamemode:br`",
             inline=False
         )
         await interaction.followup.send(embed=embed)
         return
     
-    # Create player info embed
+    # Create stats embed
     embed = discord.Embed(
         title=f"🎯 {player_data['name']}",
-        description=f"**UID:** `{player_data['uid']}` • **Region:** {player_data['region']}",
+        description=f"**UID:** `{player_data['uid']}` • **Server:** {player_data['server']}",
         color=discord.Color.gold()
     )
     
-    # Player Basic Info
+    # Basic Info
     embed.add_field(
         name="👤 Player Info",
-        value=f"**Name:** {player_data['name']}\n"
-              f"**Level:** {player_data['level']}\n"
-              f"**EXP:** {player_data['exp']:,}\n"
-              f"**Status:** {player_data['status']}",
+        value=f"**Name:** {player_data['name']}\n**Level:** {player_data['level']}\n**Clan:** {player_data['clan_name']}",
         inline=True
     )
     
-    # Rank Info with proper rank names
-    rank_emojis = {
-        "Heroic": "👑", "Grandmaster": "🔥", "Master": "⚡", 
-        "Diamond": "💎", "Platinum": "💠", "Gold": "🥇",
-        "Silver": "🥈", "Bronze": "🥉"
-    }
-    
-    current_rank_emoji = rank_emojis.get(player_data['rank_name'], "🎯")
-    
+    # Game Mode Info
     embed.add_field(
-        name=f"{current_rank_emoji} Rank Info",
-        value=f"**Rank:** {player_data['rank_name']} ({player_data['rank_number']})\n"
-              f"**Points:** {player_data['rank_points']:,}\n"
-              f"**Best Rank:** {player_data['max_rank']}",
+        name="🎮 Mode",
+        value=f"**Type:** {player_data['gamemode'].upper()}\n**Match:** {player_data['matchmode']}\n**Likes:** {player_data['likes']:,}",
         inline=True
     )
     
-    # Clan Info
+    # Match Stats
     embed.add_field(
-        name="🏠 Clan",
-        value=f"**Name:** {player_data['clan_name']}\n"
-              f"**Level:** {player_data['clan_level']}\n"
-              f"**Members:** {player_data['clan_members']}",
+        name="📊 Matches",
+        value=f"**Played:** {player_data['matches_played']:,}\n**Wins:** {player_data['wins']:,}\n**WR:** {player_data['win_rate']}%",
         inline=True
     )
     
-    # Social Stats
+    # Combat Stats
     embed.add_field(
-        name="📊 Social Stats",
-        value=f"**Likes:** {player_data['likes']:,}\n"
-              f"**Badges:** {player_data['badges']}\n"
-              f"**Season:** {player_data['season_id']}",
+        name="⚔️ Combat",
+        value=f"**Kills:** {player_data['kills']:,}\n**KD:** {player_data['kd_ratio']}\n**HS:** {player_data['headshots']:,}",
         inline=True
     )
     
-    # Additional Info
-    if player_data['last_login'] != 'Unknown':
-        try:
-            last_login_dt = datetime.datetime.fromtimestamp(int(player_data['last_login']))
-            last_login_str = last_login_dt.strftime("%Y-%m-%d %H:%M")
-            embed.add_field(
-                name="🕒 Last Login",
-                value=last_login_str,
-                inline=True
-            )
-        except:
-            pass
+    # Performance
+    embed.add_field(
+        name="📈 Performance",
+        value=f"**Damage:** {player_data['damage']:,}\n**Top 3:** {player_data['top_3']:,}\n**Survival:** {player_data['survival_time']}s",
+        inline=True
+    )
     
-    embed.set_footer(text="Free Fire Player Stats • Real-time Data")
+    embed.set_footer(text=f"Free Fire Stats • {player_data['gamemode'].upper()} • {player_data['matchmode']}")
     
     await interaction.followup.send(embed=embed)
 
-@tree.command(name="servers", description="Show available Free Fire regions")
-async def servers_list(interaction: discord.Interaction):
-    """Show available Free Fire regions"""
+@tree.command(name="example", description="Show usage example")
+async def example_command(interaction: discord.Interaction):
+    """Show example usage"""
     embed = discord.Embed(
-        title="🌍 Free Fire Regions",
-        description="Available regions for player lookup:",
+        title="📋 Usage Examples",
         color=discord.Color.blue()
     )
     
-    servers_text = ""
-    for code in REGIONS:
-        servers_text += f"**{code}**\n"
+    examples = """
+    **Basic Usage:**
+    `/stats uid:11959685790 server:ind`
     
-    embed.add_field(name="Region Codes", value=servers_text, inline=False)
+    **Ranked Battle Royale:**
+    `/stats uid:11959685790 server:ind matchmode:RANKED gamemode:br`
+    
+    **Clash Squad:**
+    `/stats uid:11959685790 server:pk gamemode:cs`
+    
+    **Different Server:**
+    `/stats uid:11959685790 server:bd matchmode:NORMAL`
+    """
+    
+    embed.add_field(name="Commands", value=examples, inline=False)
     embed.add_field(
-        name="Usage Example", 
-        value="```/uid uid:1633864660 region:IND```",
+        name="Available Servers", 
+        value=", ".join([f"`{s}`" for s in SERVERS]),
         inline=False
     )
     
@@ -248,15 +249,20 @@ async def servers_list(interaction: discord.Interaction):
 async def on_ready():
     print(f'✅ {bot.user} has connected to Discord!')
     print(f'🌐 Flask server running on port 8080')
+    
+    # Instant command sync
+    YOUR_GUILD_ID = 1425015639126442005  # Replace with your server ID
+    
     try:
-        synced = await tree.sync()
-        print(f"✅ Synced {len(synced)} commands")
+        guild = discord.Object(id=YOUR_GUILD_ID)
+        tree.copy_global_to(guild=guild)
+        synced = await tree.sync(guild=guild)
+        print(f"✅ Instantly synced {len(synced)} commands to your server")
     except Exception as e:
         print(f"❌ Error syncing commands: {e}")
 
 # Startup
 if __name__ == "__main__":
-    # Start Flask server in a separate thread
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     print("✅ Flask server started on port 8080")
@@ -266,5 +272,5 @@ if __name__ == "__main__":
         print("❌ ERROR: Set DISCORD_BOT_TOKEN environment variable!")
         exit(1)
     
-    print("✅ Starting Free Fire UID Bot...")
+    print("✅ Starting Free Fire Stats Bot...")
     bot.run(token)
