@@ -3,7 +3,7 @@ from discord import app_commands
 import aiohttp
 import asyncio
 import os
-from flask import Flask
+from flask import Flask, jsonify
 import threading
 import datetime
 from typing import Literal
@@ -13,13 +13,13 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🎯 Free Fire UID Bot is running!"
+    return "🎯 Free Fire Like Bot is running!"
 
 @app.route('/health')
 def health_check():
     return {
         "status": "healthy", 
-        "service": "Free Fire UID Bot",
+        "service": "Free Fire Like Bot",
         "timestamp": datetime.datetime.utcnow().isoformat()
     }
 
@@ -31,19 +31,16 @@ intents = discord.Intents.default()
 bot = discord.Client(intents=intents)
 tree = app_commands.CommandTree(bot)
 
-# Free Fire Servers (lowercase as shown in example)
+# Free Fire Servers
 SERVERS = ["ind", "bd", "pk", "br", "na", "eu", "me", "tr", "id", "sg", "my", "th", "vn", "ph"]
 
-# Game Modes and Match Modes (exact from example)
-GAME_MODES = ["br", "cs"]
-MATCH_MODES = ["CAREER", "NORMAL", "RANKED"]
-
-class FreeFireAPI:
+class FreeFireLikeAPI:
     def __init__(self):
-        self.base_url = "https://freefire-api-six.vercel.app"  # ✅ CORRECT API
+        self.base_url = "https://like-api-nine.vercel.app/like"
+        self.api_key = "lumina"  # From your API documentation
     
-    async def get_player_stats(self, uid: str, server: str, gamemode: str = "br", matchmode: str = "CAREER") -> dict:
-        """Fetch player statistics using EXACT URL from your example"""
+    async def send_like(self, uid: str, server_name: str) -> dict:
+        """Send like to Free Fire player using the exact API"""
         try:
             async with aiohttp.ClientSession() as session:
                 headers = {
@@ -51,15 +48,15 @@ class FreeFireAPI:
                     'Accept': 'application/json'
                 }
                 
-                # ✅ CORRECT URL STRUCTURE
-                url = f"https://freefire-api-six.vercel.app/get_player_stats?server={server}&uid={uid}&matchmode={matchmode}&gamemode={gamemode}"
-                print(f"🌐 Fetching: {url}")
+                # ✅ EXACT URL STRUCTURE from your example
+                url = f"{self.base_url}?uid={uid}&server_name={server_name}&key={self.api_key}"
+                print(f"🌐 Sending like: {url}")
                 
                 async with session.get(url, headers=headers, timeout=15) as response:
                     if response.status == 200:
                         data = await response.json()
-                        print(f"✅ API Response received")
-                        return self.parse_player_data(data, uid, server, gamemode, matchmode)
+                        print(f"✅ Like API Response: {data}")
+                        return self.parse_like_response(data, uid, server_name)
                     else:
                         return {"error": f"API returned status {response.status}"}
                         
@@ -70,53 +67,25 @@ class FreeFireAPI:
         except Exception as e:
             return {"error": f"Unexpected error: {str(e)}"}
     
-    def parse_player_data(self, data: dict, uid: str, server: str, gamemode: str, matchmode: str) -> dict:
-        """Parse API response into structured data"""
+    def parse_like_response(self, data: dict, uid: str, server_name: str) -> dict:
+        """Parse the like API response"""
         try:
             # Check if data is valid
-            if not data or isinstance(data, dict) and data.get('status') == 'error':
-                return {"error": "No player data found or invalid UID"}
+            if not data:
+                return {"error": "No response from API"}
             
-            # The API might return data directly or nested
-            player_data = data.get('data', data)  # Try 'data' key first, else use root
-            
-            # Extract basic info
-            basic_info = player_data.get('basicInfo', {})
-            clan_info = player_data.get('clanBasicInfo', {})
-            stats = player_data.get('stats', {})
-            
+            # Map API response to our structure
             result = {
                 "uid": uid,
-                "server": server.upper(),
-                "gamemode": gamemode.upper(),
-                "matchmode": matchmode,
-                "name": basic_info.get('nickname', 'Unknown'),
-                "level": basic_info.get('level', 0),
-                "exp": basic_info.get('exp', 0),
-                "rank_points": basic_info.get('rankingPoints', 0),
-                "clan_name": clan_info.get('clanName', 'No Clan'),
-                "clan_level": clan_info.get('clanLevel', 0),
-                "likes": basic_info.get('liked', 0),
-                
-                # Game stats
-                "matches_played": stats.get('matchesPlayed', 0),
-                "kills": stats.get('kills', 0),
-                "headshots": stats.get('headshots', 0),
-                "damage": stats.get('damage', 0),
-                "wins": stats.get('wins', 0),
-                "top_3": stats.get('top3', 0),
-                "top_6": stats.get('top6', 0),
-                "survival_time": stats.get('survivalTime', 0),
+                "server": server_name.upper(),
+                "likes_given_by_api": data.get("LikesGivenByAPI", 0),
+                "likes_after_command": data.get("LikesafterCommand", 0),
+                "likes_before_command": data.get("LikesbeforeCommand", 0),
+                "player_nickname": data.get("PlayerNickname", "Unknown"),
+                "remains": data.get("remains", "Unknown"),
+                "status": data.get("status", -1),
+                "raw_response": data
             }
-            
-            # Calculate ratios
-            if result['matches_played'] > 0:
-                result['win_rate'] = round((result['wins'] / result['matches_played']) * 100, 2)
-                deaths = result['matches_played'] - result['wins']
-                result['kd_ratio'] = round(result['kills'] / max(deaths, 1), 2)
-            else:
-                result['win_rate'] = 0
-                result['kd_ratio'] = 0
             
             return result
             
@@ -124,25 +93,21 @@ class FreeFireAPI:
             return {"error": f"Data parsing error: {str(e)}"}
 
 # Initialize API
-ff_api = FreeFireAPI()
+ff_like_api = FreeFireLikeAPI()
 
 # SLASH COMMANDS
 
-@tree.command(name="stats", description="Get Free Fire player statistics")
+@tree.command(name="like", description="Send like to Free Fire player")
 @app_commands.describe(
     uid="Player UID",
-    server="Server region (ind, bd, pk, etc.)",
-    gamemode="Game mode (br, cs)",
-    matchmode="Match mode"
+    server="Server region (ind, bd, pk, etc.)"
 )
-async def player_stats(
+async def send_like_command(
     interaction: discord.Interaction, 
     uid: str,
-    server: str = "ind",
-    gamemode: Literal["br", "cs"] = "br",
-    matchmode: Literal["CAREER", "NORMAL", "RANKED"] = "CAREER"
+    server: str = "ind"
 ):
-    """Get Free Fire player stats using the exact API from your example"""
+    """Send like to Free Fire player using the exact API"""
     await interaction.response.defer()
     
     # Validate UID
@@ -150,95 +115,113 @@ async def player_stats(
         await interaction.followup.send("❌ Invalid UID! Must be numeric and at least 6 digits.")
         return
     
-    # Fetch player data using EXACT URL format from your example
-    player_data = await ff_api.get_player_stats(uid, server, gamemode, matchmode)
+    # Validate server
+    if server.lower() not in SERVERS:
+        await interaction.followup.send(f"❌ Invalid server! Available: {', '.join(SERVERS)}")
+        return
     
-    if "error" in player_data:
+    # Send like via API
+    like_result = await ff_like_api.send_like(uid, server.lower())
+    
+    if "error" in like_result:
         embed = discord.Embed(
-            title="❌ Player Not Found",
-            description=player_data["error"],
+            title="❌ Like Failed",
+            description=like_result["error"],
             color=discord.Color.red()
         )
         embed.add_field(
             name="💡 Try This Example",
-            value="`/stats uid:9446822194 server:ind matchmode:RANKED gamemode:br`",
+            value="`/like uid:12662268769 server:ind`",
             inline=False
         )
         await interaction.followup.send(embed=embed)
         return
     
-    # Create stats embed
-    embed = discord.Embed(
-        title=f"🎯 {player_data['name']}",
-        description=f"**UID:** `{player_data['uid']}` • **Server:** {player_data['server']}",
-        color=discord.Color.gold()
-    )
+    # Create success embed based on status code
+    status = like_result["status"]
     
-    # Basic Info
+    if status == 2:  # Success status from your API example
+        embed = discord.Embed(
+            title="✅ Like Sent Successfully!",
+            color=discord.Color.green()
+        )
+    else:
+        embed = discord.Embed(
+            title="⚠️ Like Action Completed",
+            color=discord.Color.orange()
+        )
+    
+    # Player Info
     embed.add_field(
         name="👤 Player Info",
-        value=f"**Name:** {player_data['name']}\n**Level:** {player_data['level']}\n**Clan:** {player_data['clan_name']}",
+        value=f"**Name:** {like_result['player_nickname']}\n**UID:** `{like_result['uid']}`\n**Server:** {like_result['server']}",
         inline=True
     )
     
-    # Game Mode Info
+    # Like Statistics
     embed.add_field(
-        name="🎮 Mode",
-        value=f"**Type:** {player_data['gamemode'].upper()}\n**Match:** {player_data['matchmode']}\n**Likes:** {player_data['likes']:,}",
+        name="❤️ Like Stats",
+        value=f"**Before:** {like_result['likes_before_command']}\n**After:** {like_result['likes_after_command']}\n**Given:** {like_result['likes_given_by_api']}",
         inline=True
     )
     
-    # Match Stats
+    # Additional Info
     embed.add_field(
-        name="📊 Matches",
-        value=f"**Played:** {player_data['matches_played']:,}\n**Wins:** {player_data['wins']:,}\n**WR:** {player_data['win_rate']}%",
+        name="📊 Status",
+        value=f"**Code:** {like_result['status']}\n**Remains:** {like_result['remains']}",
         inline=True
     )
     
-    # Combat Stats
-    embed.add_field(
-        name="⚔️ Combat",
-        value=f"**Kills:** {player_data['kills']:,}\n**KD:** {player_data['kd_ratio']}\n**HS:** {player_data['headshots']:,}",
-        inline=True
-    )
-    
-    # Performance
-    embed.add_field(
-        name="📈 Performance",
-        value=f"**Damage:** {player_data['damage']:,}\n**Top 3:** {player_data['top_3']:,}\n**Survival:** {player_data['survival_time']}s",
-        inline=True
-    )
-    
-    embed.set_footer(text=f"Free Fire Stats • {player_data['gamemode'].upper()} • {player_data['matchmode']}")
+    embed.set_footer(text="Free Fire Like Bot • Powered by Like API")
     
     await interaction.followup.send(embed=embed)
+
+@tree.command(name="servers", description="Show available Free Fire servers")
+async def servers_command(interaction: discord.Interaction):
+    """Show available servers"""
+    embed = discord.Embed(
+        title="🌍 Available Free Fire Servers",
+        color=discord.Color.blue()
+    )
+    
+    servers_list = "\n".join([f"• **{server.upper()}**" for server in SERVERS])
+    embed.add_field(name="Servers", value=servers_list, inline=False)
+    
+    embed.add_field(
+        name="📋 Usage Example",
+        value="`/like uid:12662268769 server:ind`",
+        inline=False
+    )
+    
+    await interaction.response.send_message(embed=embed)
 
 @tree.command(name="example", description="Show usage example")
 async def example_command(interaction: discord.Interaction):
     """Show example usage"""
     embed = discord.Embed(
         title="📋 Usage Examples",
-        color=discord.Color.blue()
+        color=discord.Color.gold()
     )
     
     examples = """
     **Basic Usage:**
-    `/stats uid:9446822194 server:ind`
-    
-    **Ranked Battle Royale:**
-    `/stats uid:9446822194 server:ind matchmode:RANKED gamemode:br`
-    
-    **Clash Squad:**
-    `/stats uid:9446822194 server:pk gamemode:cs`
+    `/like uid:12662268769 server:ind`
     
     **Different Server:**
-    `/stats uid:9446822194 server:bd matchmode:NORMAL`
+    `/like uid:12662268769 server:bd`
+    
+    **Pakistan Server:**
+    `/like uid:12662268769 server:pk`
+    
+    **Brazil Server:**
+    `/like uid:12662268769 server:br`
     """
     
     embed.add_field(name="Commands", value=examples, inline=False)
+    
     embed.add_field(
-        name="Available Servers", 
-        value=", ".join([f"`{s}`" for s in SERVERS]),
+        name="🎯 Example from API",
+        value="UID: `12662268769`\nServer: `ind`\nPlayer: `PANEL_P0WER?`",
         inline=False
     )
     
@@ -251,7 +234,7 @@ async def on_ready():
     print(f'🌐 Flask server running on port 8080')
     
     # Instant command sync
-    YOUR_GUILD_ID = 1423949867406852160  # Your server ID
+    YOUR_GUILD_ID = 1423949867406852160  # Replace with your server ID
     
     try:
         guild = discord.Object(id=YOUR_GUILD_ID)
@@ -267,14 +250,16 @@ async def on_ready():
 
 # Startup
 if __name__ == "__main__":
+    # Start Flask server in background
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     print("✅ Flask server started on port 8080")
     
+    # Get bot token from environment variable
     token = os.getenv('DISCORD_BOT_TOKEN')
     if not token:
         print("❌ ERROR: Set DISCORD_BOT_TOKEN environment variable!")
         exit(1)
     
-    print("✅ Starting Free Fire Stats Bot...")
+    print("✅ Starting Free Fire Like Bot...")
     bot.run(token)
