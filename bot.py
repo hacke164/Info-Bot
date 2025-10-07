@@ -40,7 +40,7 @@ MATCH_MODES = ["CAREER", "NORMAL", "RANKED"]
 
 class FreeFireAPI:
     def __init__(self):
-        self.base_url = "https://freefire-api-six.vercel.app"
+        self.base_url = "https://freefire-api-six.vercel.app"  # ✅ CORRECT API
     
     async def get_player_stats(self, uid: str, server: str, gamemode: str = "br", matchmode: str = "CAREER") -> dict:
         """Fetch player statistics using EXACT URL from your example"""
@@ -51,7 +51,7 @@ class FreeFireAPI:
                     'Accept': 'application/json'
                 }
                 
-                # ✅ EXACT URL STRUCTURE FROM YOUR EXAMPLE
+                # ✅ CORRECT URL STRUCTURE
                 url = f"https://freefire-api-six.vercel.app/get_player_stats?server={server}&uid={uid}&matchmode={matchmode}&gamemode={gamemode}"
                 print(f"🌐 Fetching: {url}")
                 
@@ -161,7 +161,7 @@ async def player_stats(
         )
         embed.add_field(
             name="💡 Try This Example",
-            value="`/stats uid:11959685790 server:ind matchmode:RANKED gamemode:br`",
+            value="`/stats uid:9446822194 server:ind matchmode:RANKED gamemode:br`",
             inline=False
         )
         await interaction.followup.send(embed=embed)
@@ -223,16 +223,16 @@ async def example_command(interaction: discord.Interaction):
     
     examples = """
     **Basic Usage:**
-    `/stats uid:11959685790 server:ind`
+    `/stats uid:9446822194 server:ind`
     
     **Ranked Battle Royale:**
-    `/stats uid:11959685790 server:ind matchmode:RANKED gamemode:br`
+    `/stats uid:9446822194 server:ind matchmode:RANKED gamemode:br`
     
     **Clash Squad:**
-    `/stats uid:11959685790 server:pk gamemode:cs`
+    `/stats uid:9446822194 server:pk gamemode:cs`
     
     **Different Server:**
-    `/stats uid:11959685790 server:bd matchmode:NORMAL`
+    `/stats uid:9446822194 server:bd matchmode:NORMAL`
     """
     
     embed.add_field(name="Commands", value=examples, inline=False)
@@ -251,13 +251,17 @@ async def on_ready():
     print(f'🌐 Flask server running on port 8080')
     
     # Instant command sync
-    YOUR_GUILD_ID = 1425015639126442005  # Replace with your server ID
+    YOUR_GUILD_ID = 1423949867406852160  # Your server ID
     
     try:
         guild = discord.Object(id=YOUR_GUILD_ID)
         tree.copy_global_to(guild=guild)
         synced = await tree.sync(guild=guild)
         print(f"✅ Instantly synced {len(synced)} commands to your server")
+        
+        # Also sync globally
+        global_synced = await tree.sync()
+        print(f"✅ Synced {len(global_synced)} commands globally")
     except Exception as e:
         print(f"❌ Error syncing commands: {e}")
 
